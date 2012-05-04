@@ -5,7 +5,7 @@ $con = dbConnect();
 dbSelect($con);
 $auth = false;
 if(isset($_COOKIE["token"])){
-	$mysqlQuery = "SELECT * FROM  users WHERE  token = '" . $_COOKIE["token"] . "'";
+	$mysqlQuery = "SELECT * FROM  users WHERE  token = '" . mysql_real_escape_string($_COOKIE["token"]) . "'";
 	$result = mysql_query($mysqlQuery);
 	while($row = mysql_fetch_array($result))
 	  {
