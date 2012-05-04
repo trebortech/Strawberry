@@ -14,7 +14,7 @@ function dbSelect($con){
 }
 
 function getWebsite(){
-	return "boxxymays.com";
+	return "-----.com";
 }
 
 ?>
