@@ -1,15 +1,9 @@
 /*
-  Web client
+ Project: Strawberry
+ Author: Kevin Booth
+ Date: 23 June 2012
  
- This sketch connects to a website (http://www.google.com)
- using an Arduino Wiznet Ethernet shield. 
- 
- Circuit:
- * Ethernet shield attached to pins 10, 11, 12, 13
- 
- created 18 Dec 2009
- by David A. Mellis
- 
+ Purpose: Automated web controled sprinkler system
  */
 
 #include <SPI.h>
@@ -19,130 +13,177 @@
 // Newer Ethernet shields have a MAC address printed on a sticker on the shield
 byte mac[] = {  0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED };
 char serverName[] = "boxxymays.com";
-int connectionDelay = 15000;
-boolean readnext = false;
-int pin = 2;
-int stage = 1;
-int relaysOpen = 0;
+int connectionDelay = 15000; 
+int zoneOn = 0; // Send back to server for sprinkler status
+boolean hasIP = false; // During cmdGetIPAddress setup
+int resetCount = 0; //Track how many times we failed to connect to server
+int currentlyOn = 0;
 
-int resetCount = 0;
+// zone to pinOut
+int zone1 = 2;
+int zone2 = 3;
+int zone3 = 4;
+int zone4 = 5;
+int zone5 = 6;
+int zone6 = 7;
+int zone7 = 8;
+int zone8 = 9;
 
-int lastOnPin = 0;
-int pinOnCount = 0;
-int pinOn = 0;
-int cutOffCount = 720;
-
-// Initialize the Ethernet client library
-// with the IP address and port of the server 
-// that you want to connect to (port 80 is default for HTTP):
+//Setup client class
 EthernetClient client;
 
 void setup() {
   // start the serial library:
   Serial.begin(9600);
-  pinMode(2, OUTPUT);   
-  pinMode(3, OUTPUT);   
-  pinMode(4, OUTPUT);   
-  pinMode(5, OUTPUT);   
-  pinMode(6, OUTPUT);   
-  pinMode(7, OUTPUT);   
-  pinMode(8, OUTPUT);   
-  pinMode(9, OUTPUT);   
-  // start the Ethernet connection:
-  if (Ethernet.begin(mac) == 0) {
-    Serial.println("Failed to configure Ethernet using DHCP");
-    // no point in carrying on, so do nothing forevermore:
-    while(Ethernet.begin(mac) == 0){
-      Serial.println("Failed to configure Ethernet using DHCP");
-      delay(5000);
-    }
-  }
-  Serial.println("GOT IP!");
-  delay(10000);
+  delay(1000);
   
+  //Set pins to output
+  pinMode(zone1, OUTPUT);   
+  pinMode(zone2, OUTPUT);   
+  pinMode(zone3, OUTPUT);   
+  pinMode(zone4, OUTPUT);   
+  pinMode(zone5, OUTPUT);   
+  pinMode(zone6, OUTPUT);   
+  pinMode(zone7, OUTPUT);   
+  pinMode(zone8, OUTPUT);
   
-}
+  //Get IP Address
+  cmdGetIPAddrss();
+
+} //End of Setup
 
 void loop()
 {
-  if(stage == 1){
-    delay(connectionDelay);
-    Serial.println("Connecting...");
-    // if you get a connection, report back via serial:
-    if (client.connect(serverName, 80)) {
-      Serial.println("connected");
-      // Make a HTTP request:
-      client.println("GET /sprinklers/getSprinklers.php?pinOn=" + String(pinOn) + " HTTP/1.0");
-      client.println();
-    } else{
-      Serial.println("connection failed");
+  Serial.println("Connecting to server");
+  Serial.println(Ethernet.localIP());
+  if (client.connect(serverName, 80)) {
+    Serial.println("connected to server");
+    // Make a HTTP request:
+    String urlRequest = "GET /sprinklers/getSprinklers.php?pinOn=" + String(zoneOn) + " HTTP/1.0";
+    String urlDisconnect = "Connection: close";
+    Serial.println("Sending to server \r\n" + urlRequest + "\r\n" + urlDisconnect); 
+    
+    client.println(urlRequest);
+    client.println(urlDisconnect);
+    client.println();
+    
+    delay(2000); //Wait for server to respond
+    } 
+  else {
+    Serial.println("connection to server failed");
+    resetCount++;
+    cmdShutDownConnection();
     }
-    relaysOpen = 0;
-    resetCount = resetCount+1;
-    stage = 2;
-    pinOn = 0;
-    if(resetCount > 5){
-      digitalWrite(2, LOW);
-      digitalWrite(3, LOW);
-      digitalWrite(4, LOW);
-      digitalWrite(5, LOW);
-      digitalWrite(6, LOW);
-      digitalWrite(7, LOW);
-      digitalWrite(8, LOW);
-      digitalWrite(9, LOW);
-    }
-  }
   
-  if(stage == 2){
-    if(client.available()){
-      char c = client.read();
-       if(readnext){
-        if(c == 48){
-          digitalWrite(pin, LOW);
-          resetCount = 0;
-        }else{
-          if(relaysOpen < 1){
-            resetCount = 0;
-            if(lastOnPin == pin){
-             pinOnCount = pinOnCount+1; 
-            }else{
-             lastOnPin = pin;
-             pinOnCount = 0; 
-            }
-            if(cutOffCount > pinOnCount){
-              digitalWrite(pin, HIGH);
-              pinOn = pin;
-            }else{
-              digitalWrite(pin, LOW);
-            }
-            relaysOpen = 1;
-          }else{
-            resetCount = 0;
-            digitalWrite(pin, LOW);
+  if(resetCount > 5){
+      cmdShutDownAll();
+    }
+  
+  if(client.available()){
+    Serial.println("Returned from client");
+    resetCount = 0;
+    //Get the size of the page
+    int pageSize = client.available();
+    uint8_t returnedData[pageSize];
+    
+    //Read the entire page into a buffer
+    client.read(returnedData ,pageSize);
+
+    //The last 24 char are the page values we are looking for
+    int intLine = pageSize - 24;
+    while(intLine < pageSize){
+      if(intLine == pageSize - 23){
+        if(char(returnedData[intLine]) == '1'){
+            cmdTurnOnSprinkler(zone1);
           }
         }
-        Serial.print(c);
-        readnext = false;  
-       }
-       if(c == 91){
-         readnext = true;
-       }
-       if(c == 93){
-         pin = pin + 1;
-       }
+      if(intLine == pageSize - 20){
+        if(char(returnedData[intLine]) == '1'){
+           cmdTurnOnSprinkler(zone2); 
+          }
+        }
+      if(intLine == pageSize - 17){
+        if(char(returnedData[intLine]) == '1'){
+            cmdTurnOnSprinkler(zone3);
+          }
+        }
+      if(intLine == pageSize - 14){
+        if(char(returnedData[intLine]) == '1'){
+            cmdTurnOnSprinkler(zone4);
+          }
+        }
+      if(intLine == pageSize - 11){
+        if(char(returnedData[intLine]) == '1'){
+            cmdTurnOnSprinkler(zone5);
+          }
+        }
+      if(intLine == pageSize - 8){
+        if(char(returnedData[intLine]) == '1'){
+            cmdTurnOnSprinkler(zone6);
+          }
+        }
+      if(intLine == pageSize - 5){
+        if(char(returnedData[intLine]) == '1'){
+            cmdTurnOnSprinkler(zone7);
+          }
+        }
+      if(intLine == pageSize - 2){
+        if(char(returnedData[intLine]) == '1'){
+            cmdTurnOnSprinkler(zone8);
+          }
+        }
+       intLine++;
     }
-    
-    if (!client.connected()) {
-      pin = 2;
-      Serial.println();
-      Serial.println("disconnecting.");
-      client.stop();
-      stage = 1;
-    }
-  }
-  
-  
+   }
+ cmdShutDownConnection();
+ delay(connectionDelay);
+} //End of Loop
+
+//Get DHCP Address
+void cmdGetIPAddrss(){
+  while(hasIP == false){
+    hasIP = Ethernet.begin(mac);
+    if (hasIP == false){ //Did not get IP this time so wait and try again
+      delay(30000);
+      }
+   }
+  Serial.println("GOT IP!");
+  delay(3000); //Allow interface to come online completly
 }
+
+//Clean up connection
+void cmdShutDownConnection(){
+  Serial.println("Clean up connection");
+  client.flush();
+  delay(2000);
+  client.stop();
+}
+
+//Turn on sprinkler
+void cmdTurnOnSprinkler(int turnZoneOn){
+  if(currentlyOn != turnZoneOn){
+    digitalWrite(currentlyOn, LOW);
+    delay(2000);
+    currentlyOn = turnZoneOn;
+    digitalWrite(turnZoneOn, HIGH);
+    zoneOn = turnZoneOn;
+  }
+}
+
+//Shut all zones off
+void cmdShutDownAll(){
+  Serial.println("EMERGENCY SHUTDOWN!!!");
+  zoneOn = 0;
+  digitalWrite(zone1, LOW); 
+  digitalWrite(zone2, LOW); 
+  digitalWrite(zone3, LOW); 
+  digitalWrite(zone4, LOW); 
+  digitalWrite(zone5, LOW); 
+  digitalWrite(zone6, LOW); 
+  digitalWrite(zone7, LOW); 
+  digitalWrite(zone8, LOW); 
+}
+  
 
 
 
